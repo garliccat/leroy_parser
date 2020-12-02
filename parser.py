@@ -5,6 +5,7 @@ import os
 from bs4 import BeautifulSoup as bs
 import csv
 import random
+import re
 
 
 def get_html(url):
@@ -65,10 +66,15 @@ def get_items(url):
     url: url of subpage of category
     returns: list of urls of items pages
     '''
+    if url is None:
+        return [None]
     urls = []
-    soup = bs(get_html(url), 'lxml')
-    cards = soup.find('div', {'class': 'products-container'}).find_all('product-card')
-    print(len(cards))
+    try:
+        soup = bs(get_html(url), 'lxml')
+        cards = soup.find('div', {'class': 'products-container'}).find_all('product-card')
+        print(len(cards))
+    except:
+        return [None]
     for card in cards:
         try:
             url = card.find('a', {'slot': 'picture'}, href=True)['href']
@@ -84,6 +90,8 @@ def get_pages(url):
     url: url of category page
     returns: list of urls of subpages of category, if there is only one page - returns url back
     '''
+    if url is None:
+        return [None]
     pages = []
     try:
         soup = bs(get_html(url), 'lxml')
@@ -99,52 +107,69 @@ def get_specs(url):
     '''fetching specs from item page (final step)
     and recording it to csv file
     '''
-    soup = bs(get_html(url), 'lxml')
-    print('Url: {}'.format(url))
-    title, category_0, category_1, price, weight, color, country = '', '', '', '', '', '', ''
-
     try:
-        title = soup.find('h1', {'slot': 'title'}).get_text(strip=True)
-    except:
-        title = ''
-    print('Titile: {}'.format(title))
+        soup = bs(get_html(url), 'lxml')
+        print('Url: {}'.format(url))
+        title, category_0, category_1, price, weight, color, country, item_score, reviews = '', '', '', '', '', '', '', 0, 0
+        global item_counter
+        print('Item count: {}'.format(item_counter))
+        item_counter += 1
 
-    try:
-        category_0 = soup.find_all('uc-breadcrumbs-link', {'itemprop': 'itemListElement'})[-2].get_text(strip=True).strip()
-    except:
-        category_0 = ''
-    print('Category 1: {}'.format(category_0))
+        try:
+            title = soup.find('h1', {'slot': 'title'}).get_text(strip=True)
+        except:
+            title = ''
+        print('Titile: {}'.format(title))
 
-    try:
-        category_1 = soup.find_all('uc-breadcrumbs-link', {'itemprop': 'itemListElement'})[-3].get_text(strip=True).strip()
-    except:
-        category_1 = ''
-    print('Category 2: {}'.format(category_1))
+        try:
+            category_0 = soup.find_all('uc-breadcrumbs-link', {'itemprop': 'itemListElement'})[-2].get_text(strip=True).strip()
+        except:
+            category_0 = ''
+        print('Category 1: {}'.format(category_0))
 
-    try:
-        price = soup.find('span', {'slot': 'price'}).get_text(strip=True)
-    except:
-        price = ''
-    print('Price: {}'.format(price))
+        try:
+            category_1 = soup.find_all('uc-breadcrumbs-link', {'itemprop': 'itemListElement'})[-3].get_text(strip=True).strip()
+        except:
+            category_1 = ''
+        print('Category 2: {}'.format(category_1))
 
-    try:
-        features = soup.find_all('div', {'class': 'def-list__group'})
-        for feature in features:
-            term = feature.find('dt', {'class': 'def-list__term'}).get_text(strip=True).lower()
-            definition = feature.find('dd', {'class': 'def-list__definition'}).get_text(strip=True)
-            if 'вес' in term:
-                weight = definition
-                print('Weight: {}'.format(weight))
-            elif 'цвет' in term:
-                color = definition
-                print('Color: {}'.format(color))
-            elif 'страна' in term:
-                country = definition
-                print('Country: {}'.format(country))
+        try:
+            price = soup.find('span', {'slot': 'price'}).get_text(strip=True)
+        except:
+            price = ''
+        print('Price: {}'.format(price))
+
+        try:
+            features = soup.find_all('div', {'class': 'def-list__group'})
+            for feature in features:
+                term = feature.find('dt', {'class': 'def-list__term'}).get_text(strip=True).lower()
+                definition = feature.find('dd', {'class': 'def-list__definition'}).get_text(strip=True)
+                if bool(re.match(r'^вес.*', term)):
+                    weight = definition
+                    print('Weight: {}'.format(weight))
+                elif bool(re.match(r'^цвет$', term)):
+                    color = definition
+                    print('Color: {}'.format(color))
+                elif 'страна' in term:
+                    country = definition
+                    print('Country: {}'.format(country))
+        except:
+            pass
+        
+        try:
+            reviews = soup.find('meta', {'itemprop': 'reviewCount'})['content']
+        except:
+            pass
+        print('Reviews: {}'.format(reviews))
+
+        try:
+            item_score = soup.find('meta', {'itemprop': 'ratingValue'})['content']
+        except:
+            pass
+        print('Score: {}'.format(item_score))
+        write_csv([title, category_0, category_1, price, weight, color, country, item_score, reviews])
     except:
         pass
-    
-    write_csv([title, category_0, category_1, price, weight, color, country])
 
     print()
 
@@ -152,16 +177,20 @@ def get_specs(url):
 def main():
     url = 'https://leroymerlin.ru/catalogue/'
     cats_list = get_cats(get_html(url))
+    global item_counter
+    item_counter = 1
     if os.path.exists('leroy.csv'):
         os.remove('leroy.csv')
-    header = ['title', 'category_0', 'category_1', 'price', 'weight', 'color', 'country']
+    header = ['title', 'category_0', 'category_1', 'price', 'weight', 'color', 'country', 'score', 'reviews']
     write_csv(header)
-    # for i in cats_list[0]:
-    #     for j in get_pages(i):
-    #         get_items(j)
-    for page in get_pages(random.choice(cats_list)):
-        for item_url in get_items(page):
-            get_specs(item_url)
+    
+    # for i in cats_list:
+    #     print(i)
+    
+    for i in cats_list:
+        for page in get_pages(i):
+            for item_url in get_items(page):
+                get_specs(item_url)
 
 
 if __name__ == '__main__':
